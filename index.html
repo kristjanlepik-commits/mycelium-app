@@ -156,7 +156,7 @@ const REPO = "kristjanlepik-commits/mycelium-core";
 const API  = "https://api.github.com/repos/" + REPO + "/contents/";
 const TZ   = "Europe/Tallinn";
 const KEY  = "mycelium-token";
-const BUILD = "2026-08-28f";   // shown in the footer, so a cached copy is obvious
+const BUILD = "2026-08-28g";   // shown in the footer, so a cached copy is obvious
 const DOMAINS = ["arbonics", "ma", "tls", "personal"];
 const LABEL = {arbonics:"Arbonics", ma:"Arbonics M&A", tls:"The Long Swell", personal:"Personal"};
 
@@ -289,8 +289,31 @@ async function inbox() {
   return out;
 }
 
-async function load() {
-  $("#main").innerHTML = '<div class="panel"><p>Loading…</p></div>';
+/* ---- keeping every open copy current ---------------------------------
+ * The same page runs on the phone and on the Mac, and both read the same
+ * repository, so they agree as long as they have both looked recently. A tab
+ * left open all afternoon is showing the afternoon it was opened in, which is
+ * how two surfaces come to disagree without either of them being wrong.
+ *
+ * So: reload when a tab comes back to the front, and quietly every two minutes
+ * while it is being looked at. Refreshes are silent — no wipe to "Loading…" —
+ * because a list that blinks every two minutes is worse than a stale one.
+ */
+let loading = false, lastLoad = 0;
+
+async function load(quiet) {
+  if (loading) return;                       // never two reads in flight
+  loading = true;
+  try {
+    await read(quiet);
+    lastLoad = Date.now();
+  } finally {
+    loading = false;
+  }
+}
+
+async function read(quiet) {
+  if (!quiet) $("#main").innerHTML = '<div class="panel"><p>Loading…</p></div>';
   const [ledger, pend, ...idx] = await Promise.all([
     get("ledger.jsonl"),
     inbox(),
@@ -546,6 +569,19 @@ function askForToken(msg) {
     reset();
   });
 })();
+
+const quietly = () => token && load(true).catch(() => {});   // a silent refresh
+                                                             // that fails stays
+                                                             // silent: the list
+                                                             // on screen is the
+                                                             // last known truth
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastLoad > 20000) quietly();
+});
+window.addEventListener("focus", () => {
+  if (Date.now() - lastLoad > 20000) quietly();
+});
+setInterval(() => { if (document.visibilityState === "visible") quietly(); }, 120000);
 
 $("#reload").addEventListener("click", () => token && load().catch(e => note("err", e.message)));
 $("#forget").addEventListener("click", () => {
