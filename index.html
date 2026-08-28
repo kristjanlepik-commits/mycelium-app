@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F1F4F4">
+<title>Mycelium</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600;700&display=swap">
+<style>
+  :root {
+    --ground:#F1F4F4; --surface:#FFF; --surface-2:#F7F9F9;
+    --ink:#141C1B; --ink-2:#55635F; --ink-3:#849490;
+    --line:#DCE3E2; --line-soft:#E9EEED;
+    --urgent:#C63F3F; --urgent-bg:#FBEBEB;
+    --ma:#6D4C8C; --arb:#1F7A6B; --per:#A66A2E; --tls:#2E5C8A; --focus:#1F7A6B;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#101413; --surface:#182120; --surface-2:#1E2827;
+      --ink:#E4EBE9; --ink-2:#9BAAA6; --ink-3:#6D7C78;
+      --line:#2A3634; --line-soft:#222D2C;
+      --urgent:#F07A7A; --urgent-bg:#331D1D;
+      --ma:#B79BD4; --arb:#4FC0AB; --per:#DCA45F; --tls:#7BA9D8; --focus:#4FC0AB;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#101413; --surface:#182120; --surface-2:#1E2827;
+    --ink:#E4EBE9; --ink-2:#9BAAA6; --ink-3:#6D7C78;
+    --line:#2A3634; --line-soft:#222D2C;
+    --urgent:#F07A7A; --urgent-bg:#331D1D;
+    --ma:#B79BD4; --arb:#4FC0AB; --per:#DCA45F; --tls:#7BA9D8; --focus:#4FC0AB;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font-family:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;font-size:16px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom)}
+  .wrap{max-width:680px;margin:0 auto;padding:20px 16px 56px}
+
+  header.top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+    padding-bottom:12px;border-bottom:1px solid var(--line)}
+  h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em}
+  .stamp{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;color:var(--ink-3);
+    margin-left:auto;font-variant-numeric:tabular-nums}
+
+  .group{margin-top:18px}
+  .ghead{display:flex;align-items:center;gap:8px;padding:0 2px 6px;
+    font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--gh)}
+  .group[data-d="ma"]{--gh:var(--ma)} .group[data-d="arbonics"]{--gh:var(--arb)}
+  .group[data-d="personal"]{--gh:var(--per)} .group[data-d="tls"]{--gh:var(--tls)}
+  .gcount{margin-left:auto;color:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-weight:400}
+
+  ul{list-style:none;margin:0;padding:0;background:var(--surface);
+    border:1px solid var(--line);border-left:3px solid var(--gh);border-radius:3px;overflow:hidden}
+  li{display:flex;align-items:flex-start;gap:12px;padding:13px 14px;
+    border-bottom:1px solid var(--line-soft)}
+  li:last-child{border-bottom:0}
+  li[data-prio="high"]{background:linear-gradient(90deg,var(--urgent-bg),transparent 60%)}
+
+  button.tick{appearance:none;flex:none;width:26px;height:26px;margin-top:1px;
+    border:1.5px solid var(--ink-3);border-radius:4px;background:var(--surface);cursor:pointer;
+    position:relative;transition:none}
+  button.tick:active{transform:scale(.92)}
+  button.tick[aria-pressed="true"]{background:var(--focus);border-color:var(--focus)}
+  button.tick[aria-pressed="true"]::after{content:"";position:absolute;left:8px;top:3px;
+    width:6px;height:12px;border:solid var(--surface);border-width:0 2.5px 2.5px 0;transform:rotate(42deg)}
+  li.busy button.tick{opacity:.4}
+  li.sent{opacity:.5}
+  .body{min-width:0;flex:1}
+  .t{font-size:15.5px;word-wrap:break-word}
+  li.sent .t{text-decoration:line-through}
+  .meta{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;color:var(--ink-3);
+    margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+  .due.soon{color:var(--urgent);font-weight:500}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:3px;
+    padding:18px;margin-top:18px}
+  .panel h2{margin:0 0 8px;font-size:15px}
+  .panel p{margin:0 0 12px;color:var(--ink-2);font-size:14px}
+  input[type=password],input[type=text]{width:100%;padding:11px 12px;font-size:16px;
+    font-family:"IBM Plex Mono",monospace;background:var(--surface-2);color:var(--ink);
+    border:1px solid var(--line);border-radius:3px}
+  button.primary{margin-top:10px;width:100%;padding:12px;font-size:15px;font-weight:600;
+    background:var(--focus);color:var(--surface);border:0;border-radius:3px;cursor:pointer}
+  button.link{background:none;border:0;color:var(--ink-3);font-size:12px;cursor:pointer;
+    text-decoration:underline;padding:0;font-family:inherit}
+
+  .msg{margin-top:14px;padding:11px 13px;border-radius:3px;font-size:14px}
+  .msg.err{background:var(--urgent-bg);color:var(--urgent);border:1px solid var(--urgent)}
+  .msg.ok{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line)}
+  .empty{padding:14px;color:var(--ink-3);font-style:italic;font-size:14px}
+  footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:12px;color:var(--ink-3);display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Mycelium</h1>
+    <span class="stamp" id="stamp"></span>
+  </header>
+  <div id="main"></div>
+  <footer>
+    <span id="foot"></span>
+    <button class="link" id="reload">refresh</button>
+    <button class="link" id="forget">forget token</button>
+  </footer>
+</div>
+
+<script>
+/* Mycelium capture app.
+ *
+ * Writes straight to the repository. There is no server and no second copy:
+ * a tick becomes one new file in inbox/, and an agent session folds it into
+ * ledger.jsonl. The board it replaces could not write anywhere, which is why
+ * it needed a drain, staleness checks and a browser mirror. None of that
+ * exists here.
+ *
+ * WHY ONE FILE PER EVENT. Updating a file through the GitHub API requires its
+ * current blob SHA and returns 409 if someone changed it first. Creating a path
+ * that has never existed needs no SHA and cannot conflict. So this never touches
+ * the log — it only ever adds a file nobody else will write. The conflict class
+ * is designed out rather than handled.
+ *
+ * WHAT IS STORED IN THE BROWSER. The token, and nothing else. No task, no tick,
+ * no note is ever held here: a tap either reaches the repository or reports that
+ * it did not. Work living only on the device that recorded it is what lost four
+ * completions on 27 August.
+ */
+const REPO = "kristjanlepik-commits/mycelium-core";
+const API  = "https://api.github.com/repos/" + REPO + "/contents/";
+const TZ   = "Europe/Tallinn";
+const KEY  = "mycelium-token";
+const DOMAINS = ["arbonics", "ma", "tls", "personal"];
+const LABEL = {arbonics:"Arbonics", ma:"Arbonics M&A", tls:"The Long Swell", personal:"Personal"};
+
+const $ = s => document.querySelector(s);
+let token = null, tasks = [];
+
+/* ---- github ---- */
+
+async function get(path) {
+  const r = await fetch(API + path + "?ref=main", {
+    headers: {Authorization: "Bearer " + token, Accept: "application/vnd.github+json"},
+    cache: "no-store"
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(r.status === 401 ? "Token rejected." : "GitHub " + r.status);
+  const j = await r.json();
+  // atob yields one byte per char; decode as UTF-8 so accents survive.
+  const bytes = Uint8Array.from(atob(j.content.replace(/\n/g, "")), c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+async function put(path, text, message) {
+  const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+  const r = await fetch(API + path, {
+    method: "PUT",
+    headers: {Authorization: "Bearer " + token, Accept: "application/vnd.github+json",
+              "Content-Type": "application/json"},
+    body: JSON.stringify({message, content: b64, branch: "main"})
+  });
+  if (!r.ok) {
+    let d = ""; try { d = (await r.json()).message || ""; } catch (e) {}
+    throw new Error("Could not save (" + r.status + ") " + d);
+  }
+  return r.json();
+}
+
+/* ---- data ---- */
+
+// Seven columns. Status is deliberately not among them: the index says what
+// EXISTS, the ledger says what happened to it.
+function parseIndex(text, domain) {
+  const out = [];
+  for (const line of (text || "").split("\n")) {
+    const s = line.trim();
+    if (!s || s.startsWith("#") || s.startsWith("ID |")) continue;
+    const c = s.split("|").map(x => x.trim());
+    if (c.length !== 7 || !c[0].startsWith("M-")) continue;
+    out.push({id:c[0], domain, title:c[2], prio:c[4], due:c[5], link:c[6]});
+  }
+  return out;
+}
+
+// Replay the log. Last event by timestamp wins, exactly as ledger.py does it —
+// so this page and the scripts can never disagree about what is open.
+function derive(text) {
+  const evs = [];
+  for (const line of (text || "").split("\n")) {
+    const s = line.trim();
+    if (s) { try { evs.push(JSON.parse(s)); } catch (e) {} }
+  }
+  evs.sort((a, b) => (a.ts + a.id).localeCompare(b.ts + b.id));
+  const st = {};
+  for (const e of evs) {
+    if (e.event === "done")      st[e.id] = "done";
+    else if (e.event === "reopened") st[e.id] = "open";
+    else if (e.event === "dropped")  st[e.id] = "dropped";
+  }
+  return st;
+}
+
+async function load() {
+  $("#main").innerHTML = '<div class="panel"><p>Loading…</p></div>';
+  const [ledger, ...idx] = await Promise.all([
+    get("ledger.jsonl"),
+    ...DOMAINS.map(d => get("index/" + d + ".md"))
+  ]);
+  const state = derive(ledger);
+  tasks = [];
+  DOMAINS.forEach((d, i) => parseIndex(idx[i], d).forEach(t => {
+    if ((state[t.id] || "open") === "open") tasks.push(t);
+  }));
+  render();
+}
+
+/* ---- the write ---- */
+
+async function complete(task, li) {
+  li.classList.add("busy");
+  const btn = li.querySelector("button.tick");
+  btn.setAttribute("aria-pressed", "true");
+  const ts = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+
+  // precision "observed": this is the moment he tapped, not a reconstruction.
+  const ev = {ts, id: task.id, event: "done", actor: "kristjan",
+              precision: "observed", via: "app"};
+  const name = "inbox/" + ts.replace(/[:.]/g, "-") + "-" + task.id + ".json";
+
+  try {
+    await put(name, JSON.stringify(ev) + "\n", "app: " + task.id + " done");
+    li.classList.remove("busy");
+    li.classList.add("sent");
+    note("ok", task.id + " recorded at " + fmt(ts));
+    setTimeout(() => { tasks = tasks.filter(t => t.id !== task.id); render(); }, 900);
+  } catch (err) {
+    // Nothing is kept locally on failure. A tick that did not reach the
+    // repository did not happen, and saying so is the whole point.
+    li.classList.remove("busy");
+    btn.setAttribute("aria-pressed", "false");
+    note("err", err.message + " — not recorded. Try again.");
+  }
+}
+
+/* ---- view ---- */
+
+const fmt = ts => new Date(ts).toLocaleTimeString("en-GB",
+  {timeZone: TZ, hour: "2-digit", minute: "2-digit"});
+
+const todayTallinn = () => new Date().toLocaleDateString("en-CA", {timeZone: TZ});
+
+function note(kind, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + kind;
+  el.textContent = text;
+  const old = $(".msg"); if (old) old.remove();
+  $("#main").prepend(el);
+  if (kind === "ok") setTimeout(() => el.remove(), 4000);
+}
+
+function render() {
+  const today = todayTallinn();
+  const m = $("#main");
+  m.innerHTML = "";
+  if (!tasks.length) {
+    m.innerHTML = '<div class="panel"><h2>Nothing open</h2><p>Every task in the index is closed.</p></div>';
+  }
+  for (const d of DOMAINS) {
+    const rows = tasks.filter(t => t.domain === d);
+    if (!rows.length) continue;
+    const g = document.createElement("section");
+    g.className = "group"; g.dataset.d = d;
+    g.innerHTML = '<div class="ghead">' + LABEL[d] + '<span class="gcount">' + rows.length + "</span></div>";
+    const ul = document.createElement("ul");
+    for (const t of rows) {
+      const li = document.createElement("li");
+      li.dataset.prio = t.prio;
+      const due = t.due && t.due !== "-"
+        ? '<span class="due' + (t.due <= today ? " soon" : "") + '">' + t.due + "</span>" : "";
+      li.innerHTML =
+        '<button class="tick" aria-pressed="false" aria-label="Mark ' + t.id + ' done"></button>' +
+        '<div class="body"><div class="t"></div>' +
+        '<div class="meta"><span>' + t.id + "</span>" +
+        (t.prio === "high" ? "<span>high</span>" : "") + due + "</div></div>";
+      li.querySelector(".t").textContent = t.title;   // never innerHTML: titles are data
+      li.querySelector("button").addEventListener("click", () => {
+        if (!li.classList.contains("busy") && !li.classList.contains("sent")) complete(t, li);
+      });
+      ul.appendChild(li);
+    }
+    g.appendChild(ul);
+    m.appendChild(g);
+  }
+  $("#stamp").textContent = tasks.length + " open";
+  $("#foot").textContent = "writes to " + REPO;
+}
+
+function askForToken(msg) {
+  $("#main").innerHTML =
+    '<div class="panel"><h2>Connect</h2>' +
+    "<p>A fine-grained token for <strong>" + REPO + "</strong> only, with " +
+    "Contents: read and write. It stays on this device and is sent to GitHub alone.</p>" +
+    '<input type="password" id="tok" placeholder="github_pat_…" autocomplete="off" ' +
+    'autocapitalize="off" spellcheck="false">' +
+    '<button class="primary" id="save">Connect</button></div>';
+  if (msg) note("err", msg);
+  $("#save").addEventListener("click", async () => {
+    const v = $("#tok").value.trim();
+    if (!v) return;
+    token = v;
+    try { await load(); localStorage.setItem(KEY, v); }
+    catch (e) { token = null; askForToken(e.message); }
+  });
+}
+
+$("#reload").addEventListener("click", () => token && load().catch(e => note("err", e.message)));
+$("#forget").addEventListener("click", () => {
+  localStorage.removeItem(KEY); token = null; askForToken("Token removed from this device.");
+});
+
+try { token = localStorage.getItem(KEY); } catch (e) { token = null; }
+if (token) load().catch(e => { token = null; askForToken(e.message); });
+else askForToken();
+</script>
+</body>
+</html>
