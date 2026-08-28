@@ -89,6 +89,20 @@
   .msg.err{background:var(--urgent-bg);color:var(--urgent);border:1px solid var(--urgent)}
   .msg.ok{background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line)}
   .empty{padding:14px;color:var(--ink-3);font-style:italic;font-size:14px}
+
+  .addbtn{margin-left:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;
+    font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;
+    padding:4px 10px;border-radius:999px;border:1px dashed var(--line);
+    background:transparent;color:var(--ink-3);cursor:pointer}
+  .addbtn:active{border-style:solid;border-color:var(--gh);color:var(--gh)}
+  li.adding{background:var(--surface-2)}
+  li.adding input{flex:1;min-width:0;padding:8px 10px;font-size:16px;
+    font-family:inherit;background:var(--surface);color:var(--ink);
+    border:1px solid var(--focus);border-radius:3px}
+  li.adding .go{flex:none;padding:8px 14px;font-size:14px;font-weight:600;
+    background:var(--focus);color:var(--surface);border:0;border-radius:3px;cursor:pointer}
+  li.pending{opacity:.6}
+  li.pending .tid{font-style:italic}
   footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);
     font-size:12px;color:var(--ink-3);display:flex;gap:12px;flex-wrap:wrap;align-items:center}
   /* pull to refresh */
@@ -142,7 +156,7 @@ const REPO = "kristjanlepik-commits/mycelium-core";
 const API  = "https://api.github.com/repos/" + REPO + "/contents/";
 const TZ   = "Europe/Tallinn";
 const KEY  = "mycelium-token";
-const BUILD = "2026-08-28d";   // shown in the footer, so a cached copy is obvious
+const BUILD = "2026-08-28e";   // shown in the footer, so a cached copy is obvious
 const DOMAINS = ["arbonics", "ma", "tls", "personal"];
 const LABEL = {arbonics:"Arbonics", ma:"Arbonics M&A", tls:"The Long Swell", personal:"Personal"};
 
@@ -331,7 +345,10 @@ function render() {
     if (!rows.length) continue;
     const g = document.createElement("section");
     g.className = "group"; g.dataset.d = d;
-    g.innerHTML = '<div class="ghead">' + LABEL[d] + '<span class="gcount">' + rows.length + "</span></div>";
+    g.innerHTML = '<div class="ghead">' + LABEL[d] +
+      '<span class="gcount">' + rows.length + "</span>" +
+      '<button class="addbtn" type="button">+ add</button></div>';
+    g.querySelector(".addbtn").addEventListener("click", () => startAdd(d, g));
     const ul = document.createElement("ul");
     for (const t of rows) {
       const li = document.createElement("li");
@@ -354,6 +371,56 @@ function render() {
   }
   $("#stamp").textContent = tasks.length + " open";
   $("#foot").textContent = "writes to " + REPO + " · build " + BUILD;
+}
+
+/* ---- adding a task ----------------------------------------------------
+ * The app describes the task; it does NOT choose the id. Two devices adding a
+ * task offline would both reach for the same number, and an id collision in an
+ * append-only log is unrecoverable — two tasks would share one history. So the
+ * file goes to inbox/ without an id and fold.py allocates one, in one place.
+ *
+ * That is why a new task shows as "pending" here until the next fold, rather
+ * than appearing with a number the phone made up.
+ */
+function startAdd(domain, section) {
+  if (section.querySelector("li.adding")) return;      // one at a time
+  const ul = section.querySelector("ul") || section.appendChild(document.createElement("ul"));
+  const li = document.createElement("li");
+  li.className = "adding";
+  li.innerHTML = '<input type="text" placeholder="What needs doing?" ' +
+    'autocapitalize="sentences" autocomplete="off" enterkeyhint="done">' +
+    '<button class="go" type="button">Add</button>';
+  ul.prepend(li);
+
+  const input = li.querySelector("input");
+  const send = async () => {
+    const title = input.value.trim();
+    if (!title) { li.remove(); return; }
+    li.querySelector(".go").disabled = true;
+    input.disabled = true;
+    const ts = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    const req = {ts, kind: "new", domain, title, prio: "normal", due: "-"};
+    try {
+      await put("inbox/" + ts.replace(/[:.]/g, "-") + "-new.json",
+                JSON.stringify(req) + "\n", "app: new task in " + domain);
+      li.className = "pending";
+      li.innerHTML = '<span class="tid">pending</span><div class="body">' +
+        '<div class="t"></div><div class="meta"><span>gets an id at the next sync</span>' +
+        "</div></div>";
+      li.querySelector(".t").textContent = title;      // never innerHTML
+      note("ok", "Added. It gets an id at the next sync.");
+    } catch (err) {
+      // Nothing is kept locally. A task that did not reach the repository was
+      // not created, and the input stays so it can be retried rather than lost.
+      input.disabled = false;
+      li.querySelector(".go").disabled = false;
+      note("err", err.message + " — not added. Try again.");
+    }
+  };
+
+  li.querySelector(".go").addEventListener("click", send);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+  input.focus();
 }
 
 function askForToken(msg) {
