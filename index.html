@@ -156,7 +156,7 @@ const REPO = "kristjanlepik-commits/mycelium-core";
 const API  = "https://api.github.com/repos/" + REPO + "/contents/";
 const TZ   = "Europe/Tallinn";
 const KEY  = "mycelium-token";
-const BUILD = "2026-08-28e";   // shown in the footer, so a cached copy is obvious
+const BUILD = "2026-08-28f";   // shown in the footer, so a cached copy is obvious
 const DOMAINS = ["arbonics", "ma", "tls", "personal"];
 const LABEL = {arbonics:"Arbonics", ma:"Arbonics M&A", tls:"The Long Swell", personal:"Personal"};
 
@@ -261,10 +261,39 @@ function derive(text) {
   return st;
 }
 
+async function inbox() {
+  /* Everything written but not yet folded.
+   *
+   * Without this the app renders only the index, so a task added a minute ago
+   * vanishes on the next refresh and looks lost — it is sitting safely in the
+   * repository, invisible. Showing work in flight is the difference between
+   * "not counted yet" and "gone", and only one of those is true.
+   */
+  const r = await fetch(API + "inbox?ref=main", {
+    headers: {Authorization: "Bearer " + token, Accept: "application/vnd.github+json"},
+    cache: "no-store"
+  });
+  if (!r.ok) return [];                       // no inbox yet is normal, not an error
+  const files = (await r.json()).filter(f => f.name.endsWith(".json"));
+  const out = [];
+  for (const f of files) {
+    try {
+      const c = await fetch(f.url, {headers: {Authorization: "Bearer " + token},
+                                    cache: "no-store"});
+      if (!c.ok) continue;
+      const j = await c.json();
+      const bytes = Uint8Array.from(atob(j.content.replace(/\n/g, "")), ch => ch.charCodeAt(0));
+      out.push(JSON.parse(new TextDecoder().decode(bytes)));
+    } catch (e) { /* one unreadable file must not hide the rest */ }
+  }
+  return out;
+}
+
 async function load() {
   $("#main").innerHTML = '<div class="panel"><p>Loading…</p></div>';
-  const [ledger, ...idx] = await Promise.all([
+  const [ledger, pend, ...idx] = await Promise.all([
     get("ledger.jsonl"),
+    inbox(),
     ...DOMAINS.map(d => get("index/" + d + ".md"))
   ]);
   const state = derive(ledger);
@@ -284,6 +313,17 @@ async function load() {
   if (hadContent && parsed === 0) {
     throw new Error("The index has rows but none could be read — the column " +
       "format has changed. Refusing to show an empty list.");
+  }
+
+  // Apply what is in flight. A tick already written but not folded keeps its
+  // task off the list; a task added but not folded appears as pending.
+  const ticked = new Set(pend.filter(e => e.event === "done").map(e => e.id));
+  tasks = tasks.filter(t => !ticked.has(t.id));
+  for (const e of pend) {
+    if (e.kind === "new" && (e.title || "").trim()) {
+      tasks.push({id: "pending", domain: e.domain, title: e.title.trim(),
+                  prio: e.prio || "normal", due: "-", link: "-", pending: true});
+    }
   }
   render();
 }
@@ -355,6 +395,14 @@ function render() {
       li.dataset.prio = t.prio;
       const due = t.due && t.due !== "-"
         ? '<span class="due' + (t.due <= today ? " soon" : "") + '">' + t.due + "</span>" : "";
+      if (t.pending) {
+        li.className = "pending";
+        li.innerHTML = '<span class="tid">pending</span><div class="body">' +
+          '<div class="t"></div><div class="meta"><span>gets an id at the next sync</span></div></div>';
+        li.querySelector(".t").textContent = t.title;
+        ul.appendChild(li);
+        continue;
+      }
       li.innerHTML =
         '<button class="tick" aria-pressed="false" aria-label="Mark ' + t.id + ' done"></button>' +
         '<div class="body"><div class="t"></div>' +
