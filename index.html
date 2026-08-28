@@ -132,6 +132,7 @@ const REPO = "kristjanlepik-commits/mycelium-core";
 const API  = "https://api.github.com/repos/" + REPO + "/contents/";
 const TZ   = "Europe/Tallinn";
 const KEY  = "mycelium-token";
+const BUILD = "2026-08-28c";   // shown in the footer, so a cached copy is obvious
 const DOMAINS = ["arbonics", "ma", "tls", "personal"];
 const LABEL = {arbonics:"Arbonics", ma:"Arbonics M&A", tls:"The Long Swell", personal:"Personal"};
 
@@ -151,8 +152,11 @@ async function get(path) {
   // closed". A reassuring empty result standing in for a failed read is the
   // exact bug this system keeps having; it must be loud.
   if (r.status === 404) {
-    throw new Error("Cannot read " + path + ". Either the token lacks access to " +
-      REPO + ", or that file does not exist. It is NOT empty.");
+    // Work out WHICH 404 this is instead of making him guess. GitHub hides a
+    // private repo behind 404 rather than 403, so "token is wrong", "token
+    // cannot see this repo" and "file is missing" all look identical here.
+    // Two extra calls turn that into an answer on screen.
+    throw new Error(await diagnose(path));
   }
   if (r.status === 401) throw new Error("Token rejected. Generate a new one.");
   if (!r.ok) throw new Error("GitHub " + r.status + " reading " + path);
@@ -160,6 +164,28 @@ async function get(path) {
   // atob yields one byte per char; decode as UTF-8 so accents survive.
   const bytes = Uint8Array.from(atob(j.content.replace(/\n/g, "")), c => c.charCodeAt(0));
   return new TextDecoder().decode(bytes);
+}
+
+async function diagnose(path) {
+  const h = {Authorization: "Bearer " + token, Accept: "application/vnd.github+json"};
+  let who = null, repo = null;
+  try { const u = await fetch("https://api.github.com/user", {headers: h});
+        who = u.ok ? (await u.json()).login : null; } catch (e) {}
+  try { const p = await fetch("https://api.github.com/repos/" + REPO, {headers: h});
+        repo = p.status; } catch (e) {}
+
+  if (who === null)
+    return "The token is not valid. Generate a new one and paste it again.";
+  if (repo === 404)
+    return "Signed in as " + who + ", but this token cannot see " + REPO + ".\n\n" +
+           "On the token page, check BOTH:\n" +
+           "• Repository access = Only select repositories, with mycelium-core ticked\n" +
+           "• Permissions > Repository > Contents = Read and write\n\n" +
+           "Both default to off, and either one alone gives exactly this.";
+  if (repo && repo >= 400)
+    return "Signed in as " + who + ", but reading " + REPO + " returned " + repo + ".";
+  return "Signed in as " + who + " and " + REPO + " is reachable, but " + path +
+         " is missing from it. That is a repository problem, not a token problem.";
 }
 
 async function put(path, text, message) {
@@ -276,6 +302,7 @@ const todayTallinn = () => new Date().toLocaleDateString("en-CA", {timeZone: TZ}
 function note(kind, text) {
   const el = document.createElement("div");
   el.className = "msg " + kind;
+  el.style.whiteSpace = "pre-line";
   el.textContent = text;
   const old = $(".msg"); if (old) old.remove();
   $("#main").prepend(el);
@@ -316,7 +343,7 @@ function render() {
     m.appendChild(g);
   }
   $("#stamp").textContent = tasks.length + " open";
-  $("#foot").textContent = "writes to " + REPO;
+  $("#foot").textContent = "writes to " + REPO + " · build " + BUILD;
 }
 
 function askForToken(msg) {
