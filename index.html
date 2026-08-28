@@ -101,6 +101,9 @@
     border:1px solid var(--focus);border-radius:3px}
   li.adding .go{flex:none;padding:8px 14px;font-size:14px;font-weight:600;
     background:var(--focus);color:var(--surface);border:0;border-radius:3px;cursor:pointer}
+  .meta input[type=date]{width:auto;padding:4px 6px;font-size:14px;font-family:inherit}
+  .meta .go{padding:4px 10px;font-size:13px;font-weight:600;background:var(--focus);
+    color:var(--surface);border:0;border-radius:3px;cursor:pointer}
   li.pending{opacity:.6}
   li.pending .tid{font-style:italic}
   footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);
@@ -156,7 +159,7 @@ const REPO = "kristjanlepik-commits/mycelium-core";
 const API  = "https://api.github.com/repos/" + REPO + "/contents/";
 const TZ   = "Europe/Tallinn";
 const KEY  = "mycelium-token";
-const BUILD = "2026-08-28g";   // shown in the footer, so a cached copy is obvious
+const BUILD = "2026-08-28h";   // shown in the footer, so a cached copy is obvious
 const DOMAINS = ["arbonics", "ma", "tls", "personal"];
 const LABEL = {arbonics:"Arbonics", ma:"Arbonics M&A", tls:"The Long Swell", personal:"Personal"};
 
@@ -353,22 +356,69 @@ async function read(quiet) {
 
 /* ---- the write ---- */
 
-async function complete(task, li) {
+/* When a tick is evidence of a day, and when it is not.
+ *
+ * A tap measures the tap. Stamping every tick "observed" said the work happened
+ * at the moment of the thumb, which is true when he ticks something as he
+ * finishes it and false when he clears a backlog — and a tick three days late
+ * was the most solid-looking row in the ledger and the least accurate date in
+ * it. The grade described how well the timestamp was known, never what it was a
+ * timestamp OF.
+ *
+ * So a plain tap still means now, observed, one gesture, unchanged. Holding the
+ * tick asks which day, and that is written `inferred` at noon Tallinn: a date is
+ * evidence of a day and no evidence of an hour. Noon so no offset change can
+ * push it into the day either side.
+ */
+function tallinnNoon(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  for (const guess of [9, 10]) {                 // summer +03, winter +02
+    const t = Date.UTC(y, m - 1, d, guess, 0, 0);
+    const hour = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Tallinn", hour: "2-digit", hour12: false
+    }).format(new Date(t));
+    if (Number(hour) === 12) return new Date(t).toISOString().replace(/\.\d+Z$/, "Z");
+  }
+  return new Date(Date.UTC(y, m - 1, d, 9, 0, 0)).toISOString().replace(/\.\d+Z$/, "Z");
+}
+
+function askWhen(task, li) {
+  if (li.querySelector("input[type=date]")) return;
+  const meta = li.querySelector(".meta");
+  const keep = meta.innerHTML;
+  meta.innerHTML = '<span>done on</span><input type="date"><button class="go">Save</button>' +
+                   '<button class="link cancel">cancel</button>';
+  const input = meta.querySelector("input");
+  const day = todayTallinn();      // render()'s `today` is scoped to render()
+  input.max = day;
+  input.value = day;
+  meta.querySelector(".cancel").addEventListener("click", () => { meta.innerHTML = keep; });
+  meta.querySelector(".go").addEventListener("click", () => {
+    if (!input.value) return;
+    meta.innerHTML = keep;
+    complete(task, li, input.value === day ? null : tallinnNoon(input.value));
+  });
+  input.focus();
+}
+
+async function complete(task, li, atTs) {
   li.classList.add("busy");
   const btn = li.querySelector("button.tick");
   btn.setAttribute("aria-pressed", "true");
-  const ts = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const ts = atTs || new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
-  // precision "observed": this is the moment he tapped, not a reconstruction.
+  // "observed" only for a tap meaning now — that timestamp measures the tap and
+  // the tap is the completion. A day he picked is bounded evidence of a day.
   const ev = {ts, id: task.id, event: "done", actor: "kristjan",
-              precision: "observed", via: "app"};
+              precision: atTs ? "inferred" : "observed", via: "app"};
   const name = "inbox/" + ts.replace(/[:.]/g, "-") + "-" + task.id + ".json";
 
   try {
     await put(name, JSON.stringify(ev) + "\n", "app: " + task.id + " done");
     li.classList.remove("busy");
     li.classList.add("sent");
-    note("ok", task.id + " recorded at " + fmt(ts));
+    note("ok", task.id + (atTs ? " recorded as done on " + ts.slice(0, 10)
+                                : " recorded at " + fmt(ts)));
     setTimeout(() => { tasks = tasks.filter(t => t.id !== task.id); render(); }, 900);
   } catch (err) {
     // Nothing is kept locally on failure. A tick that did not reach the
@@ -432,8 +482,22 @@ function render() {
         '<div class="meta"><span>' + t.id + "</span>" +
         (t.prio === "high" ? "<span>high</span>" : "") + due + "</div></div>";
       li.querySelector(".t").textContent = t.title;   // never innerHTML: titles are data
-      li.querySelector("button").addEventListener("click", () => {
-        if (!li.classList.contains("busy") && !li.classList.contains("sent")) complete(t, li);
+      const tick = li.querySelector("button");
+      const free = () => !li.classList.contains("busy") && !li.classList.contains("sent");
+      let held = null, wasHeld = false;
+      const startHold = () => {
+        wasHeld = false;
+        held = setTimeout(() => { held = null; wasHeld = true; if (free()) askWhen(t, li); }, 500);
+      };
+      const endHold = () => { if (held) { clearTimeout(held); held = null; } };
+      tick.addEventListener("pointerdown", startHold);
+      tick.addEventListener("pointerup", endHold);
+      tick.addEventListener("pointerleave", endHold);
+      tick.addEventListener("pointercancel", endHold);
+      tick.addEventListener("contextmenu", e => e.preventDefault());   // hold on iOS
+      tick.addEventListener("click", () => {
+        if (wasHeld) { wasHeld = false; return; }   // the hold already opened the picker
+        if (free()) complete(t, li);
       });
       ul.appendChild(li);
     }
