@@ -48,6 +48,7 @@
     font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--gh)}
   .group[data-d="ma"]{--gh:var(--ma)} .group[data-d="arbonics"]{--gh:var(--arb)}
   .group[data-d="personal"]{--gh:var(--per)} .group[data-d="tls"]{--gh:var(--tls)}
+  .group.done{--gh:var(--ink-3)} .group.done ul{opacity:.7}
   .gcount{margin-left:auto;color:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-weight:400}
 
   ul{list-style:none;margin:0;padding:0;background:var(--surface);
@@ -159,7 +160,7 @@ const REPO = "kristjanlepik-commits/mycelium-core";
 const API  = "https://api.github.com/repos/" + REPO + "/contents/";
 const TZ   = "Europe/Tallinn";
 const KEY  = "mycelium-token";
-const BUILD = "2026-08-28h";   // shown in the footer, so a cached copy is obvious
+const BUILD = "2026-08-28i";   // shown in the footer, so a cached copy is obvious
 const DOMAINS = ["arbonics", "ma", "tls", "personal"];
 const LABEL = {arbonics:"Arbonics", ma:"Arbonics M&A", tls:"The Long Swell", personal:"Personal"};
 
@@ -255,11 +256,19 @@ function derive(text) {
     if (s) { try { evs.push(JSON.parse(s)); } catch (e) {} }
   }
   evs.sort((a, b) => (a.ts + a.id).localeCompare(b.ts + b.id));
+  // Corrections: an event naming `corrects` supersedes the one at that ts, so
+  // replay never sees the wrong claim. Resolved in a pre-pass, exactly as
+  // ledger.py does it, because the correcting line can sit anywhere in the file.
+  const gone = new Set();
+  for (const e of evs) if (e.corrects) gone.add(e.id + ":" + e.event + ":" + e.corrects);
+  const live = evs.filter(e => !gone.has(e.id + ":" + e.event + ":" + e.ts));
+
   const st = {};
-  for (const e of evs) {
-    if (e.event === "done")      st[e.id] = "done";
-    else if (e.event === "reopened") st[e.id] = "open";
-    else if (e.event === "dropped")  st[e.id] = "dropped";
+  doneAt = {};
+  for (const e of live) {
+    if (e.event === "done")          { st[e.id] = "done"; doneAt[e.id] = e.ts; }
+    else if (e.event === "reopened") { st[e.id] = "open"; delete doneAt[e.id]; }
+    else if (e.event === "dropped")    st[e.id] = "dropped";
   }
   return st;
 }
@@ -324,10 +333,12 @@ async function read(quiet) {
   ]);
   const state = derive(ledger);
   tasks = [];
+  allRows = [];
   let parsed = 0;
   DOMAINS.forEach((d, i) => {
     const rows = parseIndex(idx[i], d);
     parsed += rows.length;
+    allRows.push(...rows);        // a completed task still needs its title
     rows.forEach(t => { if ((state[t.id] || "open") === "open") tasks.push(t); });
   });
 
@@ -435,6 +446,10 @@ const fmt = ts => new Date(ts).toLocaleTimeString("en-GB",
   {timeZone: TZ, hour: "2-digit", minute: "2-digit"});
 
 const todayTallinn = () => new Date().toLocaleDateString("en-CA", {timeZone: TZ});
+// Never slice a timestamp: it is stored UTC and every day a human reads is
+// Tallinn, so 00:30Z belongs to the previous local day for two hours of the year
+// and the whole of every summer evening.
+const localDay = ts => new Date(ts).toLocaleDateString("en-CA", {timeZone: TZ});
 
 function note(kind, text) {
   const el = document.createElement("div");
@@ -504,7 +519,25 @@ function render() {
     g.appendChild(ul);
     m.appendChild(g);
   }
-  $("#stamp").textContent = tasks.length + " open";
+  const dt = allRows.filter(t => (doneAt[t.id] || "").length && localDay(doneAt[t.id]) === today);
+  $("#stamp").textContent = tasks.length + " open · " + dt.length + " done today";
+  if (dt.length) {
+    const g = document.createElement("section");
+    g.className = "group done";
+    g.innerHTML = '<div class="ghead">Done today<span class="gcount">' + dt.length + "</span></div>";
+    const ul = document.createElement("ul");
+    for (const t of dt.sort((a, b) => doneAt[b.id].localeCompare(doneAt[a.id]))) {
+      const li = document.createElement("li");
+      li.className = "sent";
+      li.innerHTML = '<div class="body"><div class="t"></div>' +
+        '<div class="meta"><span>' + t.id + "</span><span>" +
+        fmt(doneAt[t.id]) + "</span></div></div>";
+      li.querySelector(".t").textContent = t.title;
+      ul.appendChild(li);
+    }
+    g.appendChild(ul);
+    m.appendChild(g);
+  }
   $("#foot").textContent = "writes to " + REPO + " · build " + BUILD;
 }
 
